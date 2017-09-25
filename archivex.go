@@ -210,6 +210,48 @@ func (z *ZipFile) AddAll(dir string, includeCurrentFolder bool) error {
 	})
 }
 
+// AddAllWithDestination adds all files from dir in archive, recursively.
+// Directories receive a zero-size entry in the archive, with a trailing slash in the header name, and no compression
+func (z *ZipFile) AddAllWithDestination(dir string, includeCurrentFolder bool, destination string) error {
+	dir = path.Clean(dir)
+	return addAll(dir, dir, includeCurrentFolder, func(info os.FileInfo, file io.Reader, entryName string) (err error) {
+
+		// Create a header based off of the fileinfo
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+
+		// If it's a file, set the compression method to deflate (leave directories uncompressed)
+		if !info.IsDir() {
+			header.Method = zip.Deflate
+		}
+
+		// Set the header's name to what we want--it may not include the top folder
+		header.Name = destination+"/"+entryName
+
+		// Add a trailing slash if the entry is a directory
+		if info.IsDir() {
+			header.Name += "/"
+		}
+
+		// Get a writer in the archive based on our header
+		writer, err := z.Writer.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		// If we have a file to write (i.e., not a directory) then pipe the file into the archive writer
+		if file != nil {
+			if _, err := io.Copy(writer, file); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 //Close close the zip file
 func (z *ZipFile) Close() error {
 	err := z.Writer.Close()
